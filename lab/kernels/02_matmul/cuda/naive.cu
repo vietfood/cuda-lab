@@ -1,0 +1,56 @@
+#include <torch/extension.h>
+
+#include "../../utils.h"
+
+constexpr int WARP_SIZE = 32;
+
+// A: M x K
+// B: K x N
+// C: M x N
+__global__ void matmul_naive(const float *A, const float *B, float *C, int M,
+                             int N, int K) {
+  int row = threadIdx.y + blockDim.y * blockIdx.y;
+  int col = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (row < M && col < N) {
+    float sum = 0.f;
+    for (int k = 0; k < K; ++k) {
+      sum += A[row * K + k] * B[k * N + col];
+    }
+    C[row * N + col] = sum;
+  }
+}
+
+torch::Tensor matmul_naive(torch::Tensor A, torch::Tensor B) {
+  CHECK_INPUT(A, torch::kFloat32)
+  CHECK_INPUT(B, torch::kFloat32)
+
+  CHECK_MATRIX(A)
+  CHECK_MATRIX(B)
+
+  int M = A.shape()[0];
+  int K = A.shape()[1];
+  int N = B.shape()[1];
+
+  auto C = create_matrix({M, N});
+
+  /*
+  - We can use this API to find block size for
+  maximum occupancy
+  - This does not mean it is the most optimal in terms of FLOPs
+  reference:
+  https://github.com/gau-nernst/learn-cuda/blob/main/02a_matmul_simt/matmul.cu
+   */
+  int block_size_total;
+  int min_grid_size; // we don't need this
+  cudaOccupancyMaxPotentialBlockSize(&min_grid_size, &block_size_total,
+                                     matmul_naive, 0, 0);
+
+  dim3 blockDim(WARP_SIZE, block_size_total / WARP_SIZE, 1);
+  dim3 gridDim((N + WARP_SIZE - 1) / WARP_SIZE,
+               (M + blockDim.y - 1) / blockDim.y, 1);
+
+  matmul_naive<<<gridDim, blockDim>>>(A.data_ptr<float>(), B.data_ptr<float>(),
+                                      C.data_ptr<float>(), M, N, K);
+  return C;
+}

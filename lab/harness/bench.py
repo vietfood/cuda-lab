@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Sequence
 
 import torch
-from triton.testing import do_bench
 
 
 @dataclass(frozen=True)
@@ -13,6 +12,7 @@ class BenchResult:
     name: str
     latency_ms: float
     tflops: float | None = None
+    gflops: float | None = None
     bandwidth_gbs: float | None = None
     pct_peak: float | None = None
     notes: str = ""
@@ -22,6 +22,7 @@ class BenchResult:
             self.name,
             f"{self.latency_ms:.4f}",
             "" if self.tflops is None else f"{self.tflops:.2f}",
+            "" if self.gflops is None else f"{self.gflops:.2f}",
             "" if self.bandwidth_gbs is None else f"{self.bandwidth_gbs:.2f}",
             "" if self.pct_peak is None else f"{self.pct_peak:.2f}",
             self.notes,
@@ -35,11 +36,13 @@ def benchmark_ms(
     rep: int = 100,
     **kwargs: Any,
 ) -> float:
-    """Return median latency in milliseconds.
-
-    Prefer Triton's `do_bench`, matching the style used in Gau Nernst's
-    `learn-cuda`. Fall back to CUDA events, then wall-clock timing.
-    """
+    try:
+        from triton.testing import do_bench
+    except ImportError as exc:
+        raise RuntimeError(
+            "benchmark_ms requires Triton. Run this on a CUDA/Linux environment "
+            "where the `triton` package is available."
+        ) from exc
 
     return float(
         do_bench(

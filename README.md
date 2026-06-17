@@ -2,73 +2,85 @@
 
 My minimal CUDA learning lab for LLM inference kernels.
 
-The repo is intentionally small. Each kernel should have enough structure to be correct, benchmarked, and explainable without turning the lab into a framework.
+This is a small experiment harness, not a production kernel library. The point is to make the compile/test/bench loop boring so the hard work can stay on kernel reasoning: correctness, memory traffic, roofline estimates, and benchmark evidence.
 
 ## Structure
 
 ```text
-docs/                  Short notes on profiling and roofline reasoning.
-lab/harness/           Tiny Python helpers for extension loading, checks, and timing.
-lab/kernels/common/    Shared C++/CUDA helpers.
-lab/kernels/00_relu/   Small complete example. Copy this for new kernels.
-lab/reports/           Hand-written result reports, starting with 00_relu.
-results/               Raw outputs, tables, and profiler captures.
+docs/                   Short notes on profiling, roofline reasoning, and machines.
+lab/cli.py              Tiny runner: `uv run cuda-lab test 00_relu`.
+lab/harness/            Python helpers for loading extensions, checking, timing, roofline math.
+lab/kernels/common/     Shared C++/CUDA helpers.
+lab/kernels/00_relu/    Small complete example and writeup.
+results/                Raw outputs, tables, and profiler captures.
 ```
 
 ## Start Here
 
-Run the example on a CUDA machine:
+Run the ReLU example on a CUDA machine:
 
 ```bash
-uv run python lab/kernels/00_relu/test.py
-uv run python lab/kernels/00_relu/bench.py
+uv run cuda-lab test 00_relu
+uv run cuda-lab bench 00_relu
 ```
 
-Read the example report:
+Read the kernel writeup:
 
 ```text
-lab/reports/00_relu.md
+lab/kernels/00_relu/README.md
 ```
 
 Profile it manually:
 
 ```bash
-ncu --set full --import-source on -o results/profiles/relu uv run python lab/kernels/00_relu/bench.py
+ncu --set full --import-source on -o results/profiles/relu uv run cuda-lab bench 00_relu
 ```
 
 ## Adding a Kernel
 
-Copy the ReLU example:
+Copy the ReLU example, then replace the kernel-specific pieces:
 
 ```bash
-cp -r lab/kernels/00_relu lab/kernels/01_matmul_basics
+cp -r lab/kernels/00_relu lab/kernels/02_matmul
 ```
 
-Then edit:
+Expected folder shape:
 
 ```text
-reference.py  PyTorch reference.
-*.cu          CUDA kernel and launcher.
-ext.cpp       PyTorch binding.
-test.py       Correctness cases.
-bench.py      Benchmark cases.
-README.md     Explanation and commands.
+README.md       Real writeup: problem, estimates, results, failures.
+reference.py    PyTorch reference.
+test.py         Correctness cases.
+bench.py        Benchmark cases.
+cuda/
+  ext.cpp       PyTorch binding.
+  naive.cu      CUDA kernel and launcher.
+  tiled.cu      More variants as needed.
+triton/         Optional Triton variants later.
+cutlass/        Optional CUTLASS/CuTe experiments later.
 ```
+
+The harness compiles every `*.cpp`, `*.cc`, and `*.cu` file in the kernel's `cuda/` directory, so a matmul folder can grow from `naive.cu` to `tiled.cu`, `vectorized.cu`, etc. One `ext.cpp` should bind the launchers you want to call from Python.
 
 ## Kernel Standard
 
-Every serious kernel must answer:
+Each kernel `README.md` is the report. It should answer:
 
 - problem;
 - baseline;
-- optimization idea;
+- kernel variants;
 - expected bottleneck;
 - correctness tolerance;
 - benchmark shapes;
-- result;
+- FLOP count;
+- bytes moved estimate;
+- arithmetic intensity;
+- roofline expectation;
+- benchmark table;
 - profiler evidence;
 - what failed;
 - next version.
+
+Do not duplicate this in a separate reports folder. The source, benchmark, and writeup should live together.
 
 ## Acknowledgements
 

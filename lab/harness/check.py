@@ -10,4 +10,3 @@ def assert_close(actual: Any, expected: Any, *, rtol: float = 1e-2, atol: float 
         raise RuntimeError("PyTorch is required for tensor correctness checks.") from exc
 
     torch.testing.assert_close(actual, expected, rtol=rtol, atol=atol)
-
