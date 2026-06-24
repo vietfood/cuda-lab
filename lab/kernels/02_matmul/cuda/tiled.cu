@@ -3,8 +3,6 @@
 
 #include "../../utils.h"
 
-constexpr int WARP_SIZE = 32;
-
 template <size_t TILE_WIDTH>
 __global__ void matmul_tiled_kernel(const float *A, const float *B, float *C,
                                     int M, int N, int K) {
@@ -75,6 +73,8 @@ torch::Tensor matmul_tiled(torch::Tensor A, torch::Tensor B) {
 
   CHECK_MATRIX(A)
   CHECK_MATRIX(B)
+  TORCH_CHECK(A.shape()[1] == B.shape()[0],
+              "A.shape[1] must equal B.shape[0]");
 
   int M = A.shape()[0];
   int K = A.shape()[1];
@@ -87,17 +87,19 @@ torch::Tensor matmul_tiled(torch::Tensor A, torch::Tensor B) {
   dim3 gridDim((N + TILE_WIDTH - 1) / TILE_WIDTH,
                (M + TILE_WIDTH - 1) / TILE_WIDTH, 1);
 
-  matmul_tiled_kernel<TILE_WIDTH><<<gridDim, blockDim>>>(A, B, C, M, N, K);
+  matmul_tiled_kernel<TILE_WIDTH><<<gridDim, blockDim>>>(
+      A.data_ptr<float>(), B.data_ptr<float>(), C.data_ptr<float>(), M, N, K);
+  CUDA_CHECK(cudaGetLastError());
 
   return C;
 }
 
-torch::Tensor matmul_tiled16(torch::Tensor A, torch::Tensor B) {
+torch::Tensor matmul_tiled_16(torch::Tensor A, torch::Tensor B) {
   return matmul_tiled<16>(A, B);
 }
 
 // note that we cannot use larger block size (or tile width)
 // because 32x32=1024 is the maximum number of threads (in 5090)
-torch::Tensor matmul_tiled32(torch::Tensor A, torch::Tensor B) {
+torch::Tensor matmul_tiled_32(torch::Tensor A, torch::Tensor B) {
   return matmul_tiled<32>(A, B);
 }

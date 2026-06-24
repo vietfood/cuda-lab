@@ -27,6 +27,8 @@ torch::Tensor matmul_naive(torch::Tensor A, torch::Tensor B) {
 
   CHECK_MATRIX(A)
   CHECK_MATRIX(B)
+  TORCH_CHECK(A.shape()[1] == B.shape()[0],
+              "A.shape[1] must equal B.shape[0]");
 
   int M = A.shape()[0];
   int K = A.shape()[1];
@@ -52,5 +54,6 @@ torch::Tensor matmul_naive(torch::Tensor A, torch::Tensor B) {
 
   matmul_naive<<<gridDim, blockDim>>>(A.data_ptr<float>(), B.data_ptr<float>(),
                                       C.data_ptr<float>(), M, N, K);
+  CUDA_CHECK(cudaGetLastError());
   return C;
 }
