@@ -13,17 +13,15 @@ if __name__ == "__main__":
         b = torch.randn(k, n, device="cuda", dtype=torch.float32)
 
         actual = module.matmul_naive(a, b)
-        actual_tiled16 = module.matmul_tiled_16(a, b)
-        actual_tiled32 = module.matmul_tiled_32(a, b)
-        actual_coarsening16 = module.matmul_coarsening_16x4(a, b)
-        actual_coarsening32 = module.matmul_coarsening_32x4(a, b)
+        actual_tiled = module.matmul_tiled(a, b)
+        actual_1d_coarsening = module.matmul_1D_coarsening(a, b)
+        actual_2d_coarsening = module.matmul_2D_coarsening(a, b)
 
         expected = matmul_ref(a, b)
 
         assert_close(actual, expected)
-        assert_close(actual_tiled16, expected)
-        assert_close(actual_tiled32, expected)
-        assert_close(actual_coarsening16, expected)
-        assert_close(actual_coarsening32, expected)
+        assert_close(actual_tiled, expected)
+        assert_close(actual_1d_coarsening, expected)
+        assert_close(actual_2d_coarsening, expected)
 
         print(f"Matmul is correct at shape ({m}, {k}) x ({k}, {n})")

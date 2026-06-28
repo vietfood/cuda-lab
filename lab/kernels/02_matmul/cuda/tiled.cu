@@ -7,62 +7,56 @@ template <size_t TILE_WIDTH>
 __global__ void matmul_tiled_kernel(const float *A, const float *B, float *C,
                                     int M, int N, int K) {
   // allocate shared memory
-  __shared__ float A_shared[TILE_WIDTH][TILE_WIDTH];
-  __shared__ float B_shared[TILE_WIDTH][TILE_WIDTH];
+  __shared__ float A_shmem[TILE_WIDTH * TILE_WIDTH];
+  __shared__ float B_shmem[TILE_WIDTH * TILE_WIDTH];
 
   // some convenient variables
-  int bx = blockIdx.x;
-  int by = blockIdx.y;
-  int tx = threadIdx.x;
-  int ty = threadIdx.y;
+  int bCol = blockIdx.x;
+  int bRow = blockIdx.y;
+  int tCol = threadIdx.x;
+  int tRow = threadIdx.y;
 
-  // row and col of ouptut (in shared memory or tile not the whole matrix)
-  int row = ty + by * TILE_WIDTH;
-  int col = tx + bx * TILE_WIDTH;
+  /*
+   * Instead of traversing using a global index
+   * we advance pointer to current row (for A)
+   * or current column (for B)
+   * and then compute tile from there
+   */
+  A += bRow * TILE_WIDTH * K;
+  B += bCol * TILE_WIDTH;
+  C += bRow * TILE_WIDTH * N + bCol * TILE_WIDTH;
 
   float sum = 0.f;
 
-  // ph is tile index
-  // we are looping in tile
-  int num_tiles = (K + TILE_WIDTH - 1) / TILE_WIDTH;
-  for (int ph = 0; ph < num_tiles; ++ph) {
-    /* --- Phase 1: Loading --- */
-
-    // first we load from A
-    int A_tile_row = row;
-    int A_tile_col = ph * TILE_WIDTH + tx;
-
-    // then we load from B
-    int B_tile_row = ph * TILE_WIDTH + ty;
-    int B_tile_col = col;
-
-    // load element from HBM to shared memory
-    if (A_tile_row < M && A_tile_col < K) {
-      A_shared[ty][tx] = A[A_tile_row * K + A_tile_col];
+  // the outer loop advances A along the columns and B along
+  for (int ph = 0; ph < K; ph += TILE_WIDTH) {
+    // load tile into shared memory
+    if ((tRow + bRow * TILE_WIDTH < M) && (ph + tCol < K)) {
+      A_shmem[tRow * TILE_WIDTH + tCol] = A[tRow * K + tCol];
     } else {
-      A_shared[ty][tx] = 0.f;
+      A_shmem[tRow * TILE_WIDTH + tCol] = 0.f;
     }
 
-    if (B_tile_row < K && B_tile_col < N) {
-      B_shared[ty][tx] = B[B_tile_row * N + B_tile_col];
+    if ((ph + tRow < K) && (tCol + bCol * TILE_WIDTH < N)) {
+      B_shmem[tRow * TILE_WIDTH + tCol] = B[tRow * N + tCol];
     } else {
-      B_shared[ty][tx] = 0.f;
+      B_shmem[tRow * TILE_WIDTH + tCol] = 0.f;
     }
-
-    // wait for all threads to finish loading
     __syncthreads();
 
-    /* --- Phase 2: Computation --- */
+    // compute dot product of tile
     for (int k = 0; k < TILE_WIDTH; ++k) {
-      sum += A_shared[ty][k] * B_shared[k][tx];
+      sum += A_shmem[tRow * TILE_WIDTH + k] * B_shmem[k * TILE_WIDTH + tCol];
     }
-
-    // wait for all threads to finish computing
     __syncthreads();
+
+    // advance pointers onto next chunk
+    A += TILE_WIDTH;
+    B += TILE_WIDTH * N;
   }
 
-  if (row < M && col < N) {
-    C[row * N + col] = sum;
+  if ((tRow + bRow * TILE_WIDTH < M) && (tCol + bCol * TILE_WIDTH < N)) {
+    C[tRow * N + tCol] = sum;
   }
 }
 
@@ -73,8 +67,7 @@ torch::Tensor matmul_tiled(torch::Tensor A, torch::Tensor B) {
 
   CHECK_MATRIX(A)
   CHECK_MATRIX(B)
-  TORCH_CHECK(A.shape()[1] == B.shape()[0],
-              "A.shape[1] must equal B.shape[0]");
+  TORCH_CHECK(A.shape()[1] == B.shape()[0], "A.shape[1] must equal B.shape[0]");
 
   int M = A.shape()[0];
   int K = A.shape()[1];
@@ -92,10 +85,6 @@ torch::Tensor matmul_tiled(torch::Tensor A, torch::Tensor B) {
   CUDA_CHECK(cudaGetLastError());
 
   return C;
-}
-
-torch::Tensor matmul_tiled_16(torch::Tensor A, torch::Tensor B) {
-  return matmul_tiled<16>(A, B);
 }
 
 // note that we cannot use larger block size (or tile width)

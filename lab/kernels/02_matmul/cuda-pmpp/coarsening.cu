@@ -22,10 +22,7 @@ __global__ void matmul_coarsening(const float *A, const float *B, float *C,
   int col_start = tx + bx * TILE_WIDTH * COARSE_FACTOR;
 
   // COARSE_FACTOR output tiles
-  float output[COARSE_FACTOR];
-  for (int i = 0; i < COARSE_FACTOR; ++i) {
-    output[i] = 0.f;
-  }
+  float output[COARSE_FACTOR] = {0.f};
 
   // now compute
   int num_tiles = (K + TILE_WIDTH - 1) / TILE_WIDTH;
